@@ -1,0 +1,6 @@
+/target
+/__pycache__
+/venv
+/numpy
+graph_data.json
+
