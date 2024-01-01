@@ -1,4 +1,4 @@
-<h1 align="center" styles={{ color: 'red' }}>
+<h1 align="center">
     pydeps
 </h1>
 
