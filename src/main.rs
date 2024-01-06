@@ -64,23 +64,60 @@ fn get_file_or_module_name_from_import(
     let mut name = "UNKNOWN".to_string();
 
     if import[0] == "import" {
-        for fp in file_paths {
-            if format!("{}/{}/__init__.py", directory, import[1]) == fp {
-                name = import[1].clone()
+        if import.len() == 2 {
+            name = import[1].clone();
+        } else if import.len() > 2 && import[2] == "as" {
+            name = import[1].clone();
+        } else {
+            for fp in file_paths {
+                if format!("{}/{}/__init__.py", directory, import[1]) == fp {
+                    name = import[1].clone()
+                }
             }
         }
     } else if import[0] == "from" {
         for fp in file_paths {
-            if format!("{}/{}/__init__.py", directory, import[1]) == fp {
-                name = import[1].clone()
-            } else if import[1].starts_with(".") {
-                let file_dir = file_path.replace(file_name, "");
-                if format!("{}{}.py", file_dir, import[1].replace(".", "")) == fp {
-                    println!("{} <- {:?}", file_path, import);
-                    name = fp
+            if import[1].starts_with(".") {
+                let import_paths_up = import[1].chars().collect::<Vec<char>>();
+                let import_paths_down = import[1].split('.').collect::<Vec<&str>>();
+
+                let mut file_dir = file_path.split('/').collect::<Vec<&str>>();
+
+                for (_i, ip) in import_paths_up.iter().enumerate() {
+                    if ip == &'.' {
+                        file_dir.pop();
+                    }
+                }
+
+                for ip in import_paths_down {
+                    if ip != "" {
+                        file_dir.push(ip);
+                    }
+                }
+
+                let file_dir = file_dir.join("/");
+
+                if format!("{}.py", file_dir) == fp {
+                    name = format!("{}.py", file_dir.split("/").last().unwrap().to_string())
+                } else if format!("{}/__init__.py", file_dir) == fp {
+                    name = fp.replace("__init__.py", "")
+                }
+            } else {
+                let mut import_dir = import[1].replace(".", "/");
+
+                import_dir = format!("{}/{}", directory, import_dir);
+
+                if format!("{}.py", import_dir) == fp {
+                    name = format!("{}.py", import_dir.split("/").last().unwrap().to_string())
+                } else if format!("{}/__init__.py", import_dir) == fp {
+                    name = fp.replace("__init__.py", "")
                 }
             }
         }
+    }
+
+    if name == "UNKNOWN" && import[0] == "from" && !import[1].starts_with(".") {
+        println!("UNKNOWN: {:?} - {:?} ", import, file_path);
     }
 
     name
@@ -96,6 +133,7 @@ fn main() {
 
     let mut elements = Vec::new();
     let mut all_nodes = HashSet::new();
+    let mut unknown_counter = 0;
 
     for file_path in python_files.clone() {
         let file_name = Path::new(&file_path)
@@ -111,6 +149,9 @@ fn main() {
 
         // TODO: This is a hack to ignore the cfuncs.py and auxfuncs.py files
         // if file_name != "cfuncs.py" && file_name != "auxfuncs.py" {
+        //     continue;
+        // }
+        // if file_name != "build_ext.py" {
         //     continue;
         // }
 
@@ -130,6 +171,10 @@ fn main() {
                 &file_path,
                 python_files.clone(),
             );
+
+            if imported_from_file == "UNKNOWN" {
+                unknown_counter += 1;
+            }
 
             all_nodes.insert(imported_from_file.clone());
             elements.push(Element {
@@ -159,4 +204,6 @@ fn main() {
     let json = serde_json::to_string(&elements).expect("Could not serialize to JSON");
     let mut file = File::create("graph_data.json").unwrap();
     file.write_all(json.as_bytes()).unwrap();
+
+    println!("Unknown imports: {}", unknown_counter);
 }

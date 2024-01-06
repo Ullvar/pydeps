@@ -124,7 +124,7 @@ app.layout = html.Div([
             'nodeOverlap': 20,
             'refresh': 20,
             'fit': True,
-            'padding': 30,
+            'padding': 50,
             'randomize': False,
             'componentSpacing': 100,
             'nodeRepulsion': 400000,
