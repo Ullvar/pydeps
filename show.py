@@ -112,29 +112,56 @@ elements = []
 with open("graph_data.json", 'r') as file:
     elements = json.load(file)
 
-app.layout = html.Div([
-    html.H1(children='Dependencies', style={'textAlign':'center'}),
-    dcc.Input(id='node-search', type='text', placeholder='Search for a node...'),
-    cyto.Cytoscape(
-        id='cytoscape-graph',
-        elements=elements,
-        layout={
-            'name': 'cose',
-            'idealEdgeLength': 300,
-            'nodeOverlap': 20,
-            'refresh': 20,
-            'fit': True,
-            'padding': 50,
-            'randomize': False,
-            'componentSpacing': 100,
-            'nodeRepulsion': 400000,
-            'edgeElasticity': 100,
-            'nestingFactor': 5,
-        },
-        style={'width': '100vw', 'height': '100vh'},
-        stylesheet=stylesheet
-    )
-])
+unknown_imports = []
+with open('unknown_imports.json', 'r') as file:
+    unknown_imports = json.load(file)
+
+app.layout = html.Div(
+    children=[
+        html.H1(children='Dependencies', style={'textAlign': 'center'}),
+        html.A(children=f'There was {len(unknown_imports)} files with unknown imports. Scroll down to see them.', style={'textAlign': 'center', 'display': 'block'}),
+        dcc.Input(id='node-search', type='text', placeholder='Search for a node...', style={'marginTop': '30px', 'marginBottom': '20px', 'borderRadius': '5px', 'border': '1px solid #AEB6BF'}),
+        html.Div(
+            children=[
+                html.Div(
+                    style={'border': '1px solid black', 'padding': '10px', 'marginBottom': '5px'},
+                    children=[
+                        cyto.Cytoscape(
+                            id='cytoscape-graph',
+                            elements=elements,
+                            layout={
+                                'name': 'cose',
+                                'idealEdgeLength': 300,
+                                'nodeOverlap': 20,
+                                'refresh': 20,
+                                'fit': True,
+                                'padding': 50,
+                                'randomize': False,
+                                'componentSpacing': 100,
+                                'nodeRepulsion': 400000,
+                                'edgeElasticity': 100,
+                                'nestingFactor': 5,
+                            },
+                            style={'width': '100%', 'height': '80vh'},
+                            stylesheet=stylesheet
+                        ),
+                    ],
+                ),
+                
+                # Unknown imports list
+            ],
+        ),
+        html.H2("Unknown Imports"),
+        html.Div([
+            html.Div(
+                style={'border': '1px solid black', 'padding': '10px', 'marginBottom': '5px', 'width': '50%'},
+                children=[
+                html.Ul([html.Li(imp) for imp in item['imports']]),
+                html.H3(item['file_path']),
+        ]) for item in unknown_imports
+    ])
+    ],
+)
 
 
 if __name__ == '__main__':

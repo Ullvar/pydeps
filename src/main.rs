@@ -1,21 +1,31 @@
 use clap::Parser;
+use ctrlc;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::Write;
+use std::io::{BufRead, BufReader};
 use std::path::Path;
+use std::process::Command;
+use std::process::Stdio;
 use walkdir::WalkDir;
 
 mod py_std_libs;
+
+#[derive(Parser)]
+pub struct Args {
+    pub directory: String,
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Element {
     data: HashMap<String, String>,
 }
 
-#[derive(Parser)]
-pub struct Args {
-    pub directory: String,
+#[derive(Serialize, Deserialize, Debug)]
+pub struct UnknownImport {
+    pub file_path: String,
+    pub imports: Vec<String>,
 }
 
 fn list_python_files(directory: &str) -> Vec<String> {
@@ -57,7 +67,6 @@ fn filter_imports(imports_list: Vec<String>) -> Vec<Vec<String>> {
 fn get_file_or_module_name_from_import(
     directory: &str,
     import: Vec<String>,
-    file_name: &str,
     file_path: &str,
     file_paths: Vec<String>,
 ) -> String {
@@ -116,9 +125,9 @@ fn get_file_or_module_name_from_import(
         }
     }
 
-    if name == "UNKNOWN" && import[0] == "from" && !import[1].starts_with(".") {
-        println!("UNKNOWN: {:?} - {:?} ", import, file_path);
-    }
+    // if name == "UNKNOWN" && import[0] == "from" && !import[1].starts_with(".") {
+    //     println!("UNKNOWN: {:?} - {:?} ", import, file_path);
+    // }
 
     name
 }
@@ -133,7 +142,7 @@ fn main() {
 
     let mut elements = Vec::new();
     let mut all_nodes = HashSet::new();
-    let mut unknown_counter = 0;
+    let mut unknown_imports = Vec::<UnknownImport>::new();
 
     for file_path in python_files.clone() {
         let file_name = Path::new(&file_path)
@@ -147,16 +156,7 @@ fn main() {
             continue;
         }
 
-        // TODO: This is a hack to ignore the cfuncs.py and auxfuncs.py files
-        // if file_name != "cfuncs.py" && file_name != "auxfuncs.py" {
-        //     continue;
-        // }
-        // if file_name != "build_ext.py" {
-        //     continue;
-        // }
-
         let imports = extract_imports(&file_path);
-        // let normalized_imports = normalize_imports(imports);
         let filtered_imports = filter_imports(imports);
 
         let directory_with_slash = format!("/{}", directory);
@@ -167,13 +167,24 @@ fn main() {
             let imported_from_file = get_file_or_module_name_from_import(
                 directory,
                 imp.clone(),
-                &file_name,
                 &file_path,
                 python_files.clone(),
             );
 
             if imported_from_file == "UNKNOWN" {
-                unknown_counter += 1;
+                let found_unknown = unknown_imports
+                    .iter_mut()
+                    .find(|ui| ui.file_path == file_path.clone());
+
+                if let Some(ui) = found_unknown {
+                    ui.imports.push(imp.join(" "));
+                } else {
+                    unknown_imports.push(UnknownImport {
+                        file_path: file_path.clone(),
+                        imports: vec![imp.clone().join(" ")],
+                    });
+                }
+                continue;
             }
 
             all_nodes.insert(imported_from_file.clone());
@@ -201,9 +212,47 @@ fn main() {
         });
     }
 
-    let json = serde_json::to_string(&elements).expect("Could not serialize to JSON");
+    let json_elements = serde_json::to_string(&elements).expect("Could not serialize to JSON");
     let mut file = File::create("graph_data.json").unwrap();
-    file.write_all(json.as_bytes()).unwrap();
+    file.write_all(json_elements.as_bytes()).unwrap();
 
-    println!("Unknown imports: {}", unknown_counter);
+    let json_unknown_imports =
+        serde_json::to_string(&unknown_imports).expect("Could not serialize to JSON");
+    let mut file = File::create("unknown_imports.json").unwrap();
+    file.write_all(json_unknown_imports.as_bytes()).unwrap();
+
+    let python_script = "show.py";
+
+    let python_executable = "python";
+
+    let mut child = Command::new(python_executable)
+        .arg(python_script)
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("Failed to execute command");
+
+    let stdout = child.stdout.take().expect("Failed to capture stdout");
+    let reader = BufReader::new(stdout);
+
+    ctrlc::set_handler(move || {
+        child.kill().expect("Failed to kill Dash app process");
+        fs::remove_file("graph_data.json").expect("Failed to delete graph data file");
+        fs::remove_file("unknown_imports.json").expect("Failed to delete graph data file");
+        std::process::exit(0);
+    })
+    .expect("Error setting Ctrl-C handler");
+
+    for line in reader.lines() {
+        match line {
+            Ok(line) => {
+                println!("{}", line);
+
+                if line.contains("Running on") {
+                    println!("Server has started!");
+                    break;
+                }
+            }
+            Err(e) => println!("Failed to read from stdout: {}", e),
+        }
+    }
 }
